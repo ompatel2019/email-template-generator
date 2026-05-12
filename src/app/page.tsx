@@ -38,6 +38,13 @@ type GenerateResponse =
     }
   | { error: string };
 
+/** Same-origin API and links (client-side fetch does not auto-prefix basePath). */
+function withBasePath(path: string): string {
+  const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${normalized}`;
+}
+
 const countOptions: CountOption[] = [10, 15, 20];
 
 const sampleBody = `Hi [First Name],
@@ -116,7 +123,7 @@ export default function Home() {
       setCampaignsError("");
 
       try {
-        const response = await fetch("/api/campaigns");
+        const response = await fetch(withBasePath("/api/campaigns"));
         const payload = (await response.json()) as
           | { campaigns: CampaignSummary[] }
           | { error: string };
@@ -184,7 +191,7 @@ export default function Home() {
     setCopiedKey("");
 
     try {
-      const response = await fetch("/api/generate", {
+      const response = await fetch(withBasePath("/api/generate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -252,7 +259,7 @@ export default function Home() {
     setCopiedKey("");
 
     try {
-      const response = await fetch("/api/generate", {
+      const response = await fetch(withBasePath("/api/generate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -689,7 +696,7 @@ function CampaignDashboard({
                   <div className="flex gap-2 md:justify-end">
                     <a
                       className="flex h-10 items-center rounded-md bg-[#171717] px-4 text-sm font-bold text-white transition hover:bg-[#332d28]"
-                      href={campaign.publicPath}
+                      href={withBasePath(campaign.publicPath)}
                       rel="noreferrer"
                       target="_blank"
                     >
@@ -998,7 +1005,7 @@ function toAbsoluteUrl(path: string) {
     return path;
   }
 
-  return new URL(path, window.location.origin).toString();
+  return new URL(withBasePath(path), window.location.origin).toString();
 }
 
 async function writeClipboard(text: string) {
