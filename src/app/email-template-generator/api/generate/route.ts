@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 
 type GenerateRequest = {
@@ -20,16 +21,21 @@ type EmailTemplate = {
   previewText: string;
   body: string;
   cta: string;
+  sourceType?: "ai" | "submission";
+  verified?: boolean;
 };
 
 const allowedCounts = new Set([10, 15, 20]);
 const allowedActions = new Set(["batch", "regenerate", "shorten"]);
-const model = process.env.OPENAI_MODEL || "gpt-5.2";
+const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+const toolName = "return_email_variation_templates";
 
 export async function POST(request: Request) {
-  if (!process.env.OPENAI_API_KEY) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!apiKey) {
     return Response.json(
-      { error: "Missing OPENAI_API_KEY in the server environment." },
+      { error: "Missing ANTHROPIC_API_KEY in the server environment." },
       { status: 500 },
     );
   }
@@ -70,69 +76,42 @@ export async function POST(request: Request) {
   }
 
   try {
-    const openAIResponse = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        input: [
-          {
-            role: "system",
-            content: [
-              {
-                type: "input_text",
-                text: buildSystemPrompt({ action, count }),
-              },
-            ],
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: buildUserPrompt({
-                  action,
-                  bodyCopy,
-                  count,
-                  existingTemplate,
-                  fromLines,
-                  restrictions,
-                  subjectLines,
-                }),
-              },
-            ],
-          },
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "email_variation_templates",
-            strict: true,
-            schema: buildSchema(count),
-          },
+    const anthropic = new Anthropic({ apiKey });
+    const claudeResponse = await anthropic.messages.create({
+      model,
+      max_tokens: 12000,
+      system: buildSystemPrompt({ action, count }),
+      messages: [
+        {
+          role: "user",
+          content: buildUserPrompt({
+            action,
+            bodyCopy,
+            count,
+            existingTemplate,
+            fromLines,
+            restrictions,
+            subjectLines,
+          }),
         },
-      }),
+      ],
+      tools: [
+        {
+          name: toolName,
+          description: "Return the generated clinical trial recruitment email templates.",
+          input_schema: buildSchema(count),
+        },
+      ],
+      tool_choice: {
+        type: "tool",
+        name: toolName,
+      },
     });
 
-    const responseBody = await openAIResponse.json();
-
-    if (!openAIResponse.ok) {
-      const message =
-        typeof responseBody?.error?.message === "string"
-          ? responseBody.error.message
-          : "OpenAI request failed.";
-
-      return Response.json({ error: message }, { status: openAIResponse.status });
-    }
-
-    const rawText = extractOutputText(responseBody);
-    const parsed = JSON.parse(rawText) as { templates?: EmailTemplate[] };
+    const parsed = extractToolInput(claudeResponse);
 
     if (!Array.isArray(parsed.templates) || parsed.templates.length !== count) {
-      return Response.json({ error: "OpenAI returned an unexpected template count." }, { status: 502 });
+      return Response.json({ error: "Claude returned an unexpected template count." }, { status: 502 });
     }
 
     if (action === "batch") {
@@ -142,6 +121,7 @@ export async function POST(request: Request) {
 
       const savedCampaign = await saveCampaign({
         bodyCopy,
+        campaignId,
         fromLines,
         restrictions,
         subjectLines,
@@ -213,6 +193,9 @@ Rules:
 - Preserve fixed facts from the source copy, including compensation caps, eligibility ranges, trial condition, and investigational wording.
 - Do not promise qualification, enrollment, treatment benefit, cure, payment, or medication approval.
 - Use clear consumer email language. Keep each body concise and ready to paste into an email platform.
+- If compensation is mentioned in the source copy, make it clear and prominent without overstating it. Preserve the exact compensation amount, cap, conditions, and uncertainty.
+- Highlight practical positives of participating, such as helping research, receiving study-related care or assessments, convenience, compensation, or learning more, only when supported by the source copy.
+- Do not use pressure tactics, false urgency, or unsupported scarcity claims. Only mention limited availability, deadlines, or time sensitivity if they are explicitly included in the source copy.
 - Vary subject lines, from lines, preview text, body framing, and CTA wording while staying faithful to the provided copy.
 - Do not use em dashes in any generated field. Use commas, periods, colons, semicolons, or parentheses instead.
 - Do not include markdown, numbering, commentary, or compliance explanations inside the generated fields.`;
@@ -278,6 +261,7 @@ function actionInstruction(action: string) {
 
 async function saveCampaign({
   bodyCopy,
+  campaignId,
   fromLines,
   restrictions,
   subjectLines,
@@ -285,6 +269,7 @@ async function saveCampaign({
   trialName,
 }: {
   bodyCopy: string;
+  campaignId: string;
   fromLines: string;
   restrictions: string;
   subjectLines: string;
@@ -292,18 +277,31 @@ async function saveCampaign({
   trialName: string;
 }) {
   const supabase = createSupabaseAdmin();
-  const publicId = `${slugify(trialName)}-${crypto.randomUUID().slice(0, 8)}`;
+  const nextCampaignId = campaignId || crypto.randomUUID();
+  const publicId = toShortPublicId(nextCampaignId);
 
-  const { data: campaign, error: campaignError } = await supabase
-    .from("campaigns")
-    .insert({
-      public_id: publicId,
-      trial_name: trialName,
-      source_email: bodyCopy,
-      subject_lines: subjectLines,
-      from_lines: fromLines,
-      restrictions,
-    })
+  const campaignMutation = campaignId
+    ? supabase
+        .from("campaigns")
+        .update({
+          trial_name: trialName,
+          source_email: bodyCopy,
+          subject_lines: subjectLines,
+          from_lines: fromLines,
+          restrictions,
+        })
+        .eq("id", campaignId)
+    : supabase.from("campaigns").insert({
+        id: nextCampaignId,
+        public_id: publicId,
+        trial_name: trialName,
+        source_email: bodyCopy,
+        subject_lines: subjectLines,
+        from_lines: fromLines,
+        restrictions,
+      });
+
+  const { data: campaign, error: campaignError } = await campaignMutation
     .select("id, public_id, trial_name")
     .single();
 
@@ -320,11 +318,13 @@ async function saveCampaign({
         from_line: template.fromLine,
         subject_line: template.subjectLine,
         preview_text: template.previewText,
+        source_type: "ai",
         body: template.body,
         cta: template.cta,
+        verified: false,
       })),
     )
-    .select("id, from_line, subject_line, preview_text, body, cta");
+    .select("id, from_line, subject_line, preview_text, body, cta, verified, source_type");
 
   if (templatesError || !savedTemplates) {
     throw new Error(templatesError?.message || "Failed to save generated templates.");
@@ -334,7 +334,7 @@ async function saveCampaign({
     campaign: {
       id: campaign.id,
       publicId: campaign.public_id,
-      publicPath: `/campaigns/${campaign.public_id}`,
+      publicPath: `/campaign/${campaign.public_id}`,
       trialName: campaign.trial_name,
     },
     templates: savedTemplates.map(mapTemplateRow),
@@ -370,7 +370,9 @@ function mapTemplateRow(row: {
   from_line: string;
   id: string;
   preview_text: string;
+  source_type?: string | null;
   subject_line: string;
+  verified?: boolean | null;
 }) {
   return {
     id: row.id,
@@ -378,21 +380,17 @@ function mapTemplateRow(row: {
     cta: row.cta,
     fromLine: row.from_line,
     previewText: row.preview_text,
+    sourceType: row.source_type === "submission" ? "submission" : "ai",
     subjectLine: row.subject_line,
+    verified: Boolean(row.verified),
   };
 }
 
-function slugify(value: string) {
-  const slug = value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  return slug || "campaign";
+function toShortPublicId(id: string) {
+  return id.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase();
 }
 
-function buildSchema(count: number) {
+function buildSchema(count: number): Anthropic.Messages.Tool.InputSchema {
   return {
     type: "object",
     additionalProperties: false,
@@ -419,39 +417,25 @@ function buildSchema(count: number) {
   };
 }
 
-function extractOutputText(responseBody: unknown) {
-  if (
-    typeof responseBody === "object" &&
-    responseBody !== null &&
-    "output_text" in responseBody &&
-    typeof responseBody.output_text === "string"
-  ) {
-    return responseBody.output_text;
-  }
-
-  if (
-    typeof responseBody === "object" &&
-    responseBody !== null &&
-    "output" in responseBody &&
-    Array.isArray(responseBody.output)
-  ) {
-    const text = responseBody.output
-      .flatMap((item) =>
-        typeof item === "object" && item !== null && "content" in item && Array.isArray(item.content)
-          ? item.content
-          : [],
-      )
-      .map((content) =>
-        typeof content === "object" && content !== null && "text" in content && typeof content.text === "string"
-          ? content.text
-          : "",
-      )
-      .join("");
-
-    if (text) {
-      return text;
+function extractToolInput(responseBody: Anthropic.Messages.Message): { templates?: EmailTemplate[] } {
+  for (const content of responseBody.content) {
+    if (content.type === "tool_use" && content.name === toolName && isTemplateResponse(content.input)) {
+      return content.input;
     }
   }
 
-  throw new Error("OpenAI response did not include output text.");
+  throw new Error("Claude response did not include generated templates.");
+}
+
+function isTemplateResponse(value: unknown): value is { templates?: EmailTemplate[] } {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "templates" in value &&
+    Array.isArray(value.templates)
+  ) {
+    return value.templates.every(isEmailTemplate);
+  }
+
+  return false;
 }

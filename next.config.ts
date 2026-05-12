@@ -1,9 +1,10 @@
 import type { NextConfig } from "next";
 
-const basePath = "/ai/apps/email-template-generator";
+const basePath = "/ai/apps";
 
 const nextConfig: NextConfig = {
-  // Public URL: https://goodlabgroup.com/ai/apps/email-template-generator/
+  // Admin URL: https://goodlabgroup.com/ai/apps/email-template-generator/
+  // Public campaign URL: https://goodlabgroup.com/ai/apps/campaign/[id]
   basePath,
   assetPrefix: basePath,
   env: {
