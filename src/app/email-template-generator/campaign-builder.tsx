@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 type CountOption = 10 | 15 | 20;
 type AppScreen = "dashboard" | "new" | "builder";
 type ReviewTab = "verified" | "unverified";
+type UnverifiedTab = "ai" | "submissions";
 type TemplateSource = "ai" | "submission";
 
 type EmailTemplate = {
@@ -112,6 +113,7 @@ export default function CampaignBuilder({
   const [isLoading, setIsLoading] = useState(false);
   const [reviewingSubmissionId, setReviewingSubmissionId] = useState("");
   const [reviewTab, setReviewTab] = useState<ReviewTab>("unverified");
+  const [unverifiedTab, setUnverifiedTab] = useState<UnverifiedTab>("ai");
   const [verifyingTemplateId, setVerifyingTemplateId] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
   const [deletingCampaignId, setDeletingCampaignId] = useState("");
@@ -696,9 +698,6 @@ export default function CampaignBuilder({
                 <div>
                   <div>
                     <h2 className="text-lg font-semibold text-[#171717]">Review Queue</h2>
-                    <p className="mt-1 text-sm leading-6 text-[#746b62]">
-                      Verify generated emails or public submissions before they appear on the share page.
-                    </p>
                   </div>
                 </div>
 
@@ -736,11 +735,35 @@ export default function CampaignBuilder({
                 )
               ) : (
                 <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-y-contain p-4 pb-7 sm:p-5 sm:pb-8">
-                  {unverifiedCount === 0 ? (
-                    <SubmissionEmptyState />
-                  ) : (
-                    <>
-                      {unverifiedTemplates.map((template, index) => (
+                  <div className="grid grid-cols-2 gap-2 rounded-md border border-[#e3d9cf] bg-[#faf7f2] p-1">
+                    <button
+                      className={`h-9 rounded px-3 text-sm font-bold transition ${
+                        unverifiedTab === "ai"
+                          ? "bg-white text-[#171717] shadow-sm"
+                          : "text-[#7a7168] hover:text-[#171717]"
+                      }`}
+                      onClick={() => setUnverifiedTab("ai")}
+                      type="button"
+                    >
+                      AI-Generated ({unverifiedTemplates.length})
+                    </button>
+                    <button
+                      className={`h-9 rounded px-3 text-sm font-bold transition ${
+                        unverifiedTab === "submissions"
+                          ? "bg-white text-[#171717] shadow-sm"
+                          : "text-[#7a7168] hover:text-[#171717]"
+                      }`}
+                      onClick={() => setUnverifiedTab("submissions")}
+                      type="button"
+                    >
+                      Submissions ({submissions.length})
+                    </button>
+                  </div>
+                  {unverifiedTab === "ai" ? (
+                    unverifiedTemplates.length === 0 ? (
+                      <SubmissionEmptyState />
+                    ) : (
+                      unverifiedTemplates.map((template, index) => (
                         <TemplateCard
                           disabled={verifyingTemplateId === template.id}
                           key={`unverified-email-${index}`}
@@ -748,17 +771,20 @@ export default function CampaignBuilder({
                           template={template}
                           templateNumber={index + 1}
                         />
-                      ))}
-                      {submissions.map((submission) => (
-                        <SubmissionCard
-                          disabled={reviewingSubmissionId === submission.id}
-                          key={submission.id}
-                          onAccept={() => reviewSubmission(submission, "accept")}
-                          onReject={() => reviewSubmission(submission, "reject")}
-                          submission={submission}
-                        />
-                      ))}
-                    </>
+                      ))
+                    )
+                  ) : submissions.length === 0 ? (
+                    <SubmissionEmptyState />
+                  ) : (
+                    submissions.map((submission) => (
+                      <SubmissionCard
+                        disabled={reviewingSubmissionId === submission.id}
+                        key={submission.id}
+                        onAccept={() => reviewSubmission(submission, "accept")}
+                        onReject={() => reviewSubmission(submission, "reject")}
+                        submission={submission}
+                      />
+                    ))
                   )}
                 </div>
               )}
@@ -1104,22 +1130,25 @@ function SubmissionCard({
   onReject: () => void;
   submission: CampaignSubmission;
 }) {
+  const metaFields = [
+    { label: "From", value: submission.fromLine, tone: "default" as const },
+    { label: "Subject Line", value: submission.subjectLine, tone: "default" as const },
+    { label: "Preview", value: submission.previewText, tone: "default" as const },
+    { label: "CTA", value: submission.cta, tone: "accent" as const },
+    { label: "Restrictions", value: submission.restrictions, tone: "default" as const },
+  ].filter(({ value }) => Boolean(value));
+
   return (
     <article className="rounded-lg border border-[#e4dbd1] bg-white p-4 shadow-sm">
       <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#a34f2d]">
-              Submitted input
-            </p>
-            <span className="rounded-md bg-[#eef7df] px-2.5 py-1 text-xs font-bold text-[#49651e]">
-              Submission
-            </span>
-          </div>
-          <h4 className="mt-2 text-xl font-semibold leading-7 text-[#171717]">
-            {submission.subjectLine || "No subject line provided"}
-          </h4>
-          <p className="mt-1 text-xs text-[#7a7168]">{formatDate(submission.createdAt)}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#a34f2d]">
+            Submitted input
+          </p>
+          <span className="rounded-md bg-[#eef7df] px-2.5 py-1 text-xs font-bold text-[#49651e]">
+            Submission
+          </span>
+          <span className="text-xs text-[#7a7168]">{formatDate(submission.createdAt)}</span>
         </div>
         <div className="flex gap-2 lg:justify-end">
           <VerifyButton
@@ -1139,12 +1168,13 @@ function SubmissionCard({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
-        <MetaBox label="From" value={submission.fromLine || "Not provided"} />
-        <MetaBox label="Preview" value={submission.previewText || "Not provided"} />
-        <MetaBox label="CTA" tone="accent" value={submission.cta || "Not provided"} />
-        <MetaBox label="Restrictions" value={submission.restrictions || "Not provided"} />
-      </div>
+      {metaFields.length > 0 ? (
+        <div className={`mt-4 grid gap-3 text-sm ${metaFields.length > 1 ? "md:grid-cols-2" : ""}`}>
+          {metaFields.map(({ label, value, tone }) => (
+            <MetaBox key={label} label={label} tone={tone} value={value!} />
+          ))}
+        </div>
+      ) : null}
 
       {submission.body ? (
         <p className="mt-4 whitespace-pre-wrap rounded-md bg-[#faf7f2] p-4 text-sm leading-7 text-[#302a25]">
@@ -1193,7 +1223,11 @@ function TemplateCard({
               </span>
             </div>
             <h3 className="mt-2 text-2xl font-semibold leading-8 text-[#171717]">
-              {template.subjectLine}
+              {template.subjectLine ||
+                template.fromLine ||
+                (template.body
+                  ? template.body.slice(0, 60) + (template.body.length > 60 ? "…" : "")
+                  : "Verified template")}
             </h3>
           </div>
 
@@ -1215,18 +1249,32 @@ function TemplateCard({
           </div>
         </div>
 
-        <div className="grid w-full gap-3 text-sm md:grid-cols-3">
-          <MetaBox label="From" value={template.fromLine} />
-          <MetaBox label="Preview" value={template.previewText} />
-          <MetaBox label="CTA" tone="accent" value={template.cta} />
-        </div>
+        {[
+          { label: "From", value: template.fromLine, tone: "default" as const },
+          { label: "Preview", value: template.previewText, tone: "default" as const },
+          { label: "CTA", value: template.cta, tone: "accent" as const },
+        ].filter(({ value }) => Boolean(value)).length > 0 ? (
+          <div className="grid w-full gap-3 text-sm md:grid-cols-3">
+            {[
+              { label: "From", value: template.fromLine, tone: "default" as const },
+              { label: "Preview", value: template.previewText, tone: "default" as const },
+              { label: "CTA", value: template.cta, tone: "accent" as const },
+            ]
+              .filter(({ value }) => Boolean(value))
+              .map(({ label, value, tone }) => (
+                <MetaBox key={label} label={label} tone={tone} value={value} />
+              ))}
+          </div>
+        ) : null}
       </div>
 
-      <div className="p-5">
-        <p className="whitespace-pre-wrap rounded-md bg-[#faf7f2] p-4 text-sm leading-7 text-[#302a25]">
-          {template.body}
-        </p>
-      </div>
+      {template.body ? (
+        <div className="p-5">
+          <p className="whitespace-pre-wrap rounded-md bg-[#faf7f2] p-4 text-sm leading-7 text-[#302a25]">
+            {template.body}
+          </p>
+        </div>
+      ) : null}
     </article>
   );
 }

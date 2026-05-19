@@ -1,3 +1,4 @@
+import { sendNotificationEmail } from "@/lib/mailer";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 
 type RouteContext = {
@@ -6,15 +7,14 @@ type RouteContext = {
   }>;
 };
 
-type SubmissionRequest = {
-  body?: unknown;
-  cta?: unknown;
-  fromLine?: unknown;
-  notes?: unknown;
-  previewText?: unknown;
-  restrictions?: unknown;
-  subjectLine?: unknown;
-};
+type SubmissionRequest =
+  | { type: "fromLines"; lines: unknown }
+  | { type: "subjectLines"; lines: unknown }
+  | { type: "body"; body: unknown }
+  | { type: "full"; fromLine?: unknown; subjectLine?: unknown; previewText?: unknown; body?: unknown; cta?: unknown };
+
+const BASE_URL =
+  process.env.NEXT_PUBLIC_APP_URL ?? "https://goodlabgroup.com/ai/apps";
 
 export async function POST(request: Request, { params }: RouteContext) {
   const { publicId } = await params;
@@ -27,24 +27,10 @@ export async function POST(request: Request, { params }: RouteContext) {
     return Response.json({ error: "Invalid JSON request body." }, { status: 400 });
   }
 
-  const submission = {
-    body: readText(payload.body),
-    cta: readText(payload.cta),
-    from_line: readText(payload.fromLine),
-    notes: readText(payload.notes),
-    preview_text: readText(payload.previewText),
-    restrictions: readText(payload.restrictions),
-    subject_line: readText(payload.subjectLine),
-  };
-
-  if (!Object.values(submission).some(Boolean)) {
-    return Response.json({ error: "Add at least one input before submitting." }, { status: 400 });
-  }
-
   const supabase = createSupabaseAdmin();
   const { data: campaign, error: campaignError } = await supabase
     .from("campaigns")
-    .select("id")
+    .select("id, trial_name")
     .eq("public_id", publicId)
     .single();
 
@@ -52,17 +38,97 @@ export async function POST(request: Request, { params }: RouteContext) {
     return Response.json({ error: "Campaign not found." }, { status: 404 });
   }
 
-  const { error } = await supabase.from("campaign_submissions").insert({
-    campaign_id: campaign.id,
-    ...submission,
-    status: "pending",
-  });
+  const campaignName = campaign.trial_name ?? "Unknown Campaign";
+  const adminUrl = `${BASE_URL}/email-template-generator/${publicId}`;
 
-  if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+  if (payload.type === "fromLines" || payload.type === "subjectLines") {
+    const raw = Array.isArray(payload.lines) ? payload.lines : [];
+    const lines = raw
+      .map((line) => (typeof line === "string" ? line.trim() : ""))
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      return Response.json({ error: "Add at least one line before submitting." }, { status: 400 });
+    }
+
+    const field = payload.type === "fromLines" ? "from_line" : "subject_line";
+    const rows = lines.map((line) => ({
+      campaign_id: campaign.id,
+      [field]: line,
+      status: "pending",
+    }));
+
+    const { error } = await supabase.from("campaign_submissions").insert(rows);
+
+    if (error) {
+      return Response.json({ error: error.message }, { status: 500 });
+    }
+
+    const submissionType = payload.type === "fromLines" ? "from lines" : "subject lines";
+    sendNotificationEmail({ campaignName, campaignAdminUrl: adminUrl, submissionType }).catch(
+      console.error,
+    );
+
+    return Response.json({ ok: true, count: rows.length });
   }
 
-  return Response.json({ ok: true });
+  if (payload.type === "body") {
+    const body = typeof payload.body === "string" ? payload.body.trim() : "";
+
+    if (!body) {
+      return Response.json({ error: "Add email body copy before submitting." }, { status: 400 });
+    }
+
+    const { error } = await supabase.from("campaign_submissions").insert({
+      campaign_id: campaign.id,
+      body,
+      status: "pending",
+    });
+
+    if (error) {
+      return Response.json({ error: error.message }, { status: 500 });
+    }
+
+    sendNotificationEmail({ campaignName, campaignAdminUrl: adminUrl, submissionType: "email body" }).catch(
+      console.error,
+    );
+
+    return Response.json({ ok: true, count: 1 });
+  }
+
+  if (payload.type === "full") {
+    const fromLine = readText(payload.fromLine);
+    const subjectLine = readText(payload.subjectLine);
+    const previewText = readText(payload.previewText);
+    const body = readText(payload.body);
+    const cta = readText(payload.cta);
+
+    if (!fromLine && !subjectLine && !previewText && !body && !cta) {
+      return Response.json({ error: "Fill in at least one field before submitting." }, { status: 400 });
+    }
+
+    const { error } = await supabase.from("campaign_submissions").insert({
+      campaign_id: campaign.id,
+      from_line: fromLine,
+      subject_line: subjectLine,
+      preview_text: previewText,
+      body,
+      cta,
+      status: "pending",
+    });
+
+    if (error) {
+      return Response.json({ error: error.message }, { status: 500 });
+    }
+
+    sendNotificationEmail({ campaignName, campaignAdminUrl: adminUrl, submissionType: "full email" }).catch(
+      console.error,
+    );
+
+    return Response.json({ ok: true, count: 1 });
+  }
+
+  return Response.json({ error: "Invalid submission type." }, { status: 400 });
 }
 
 function readText(value: unknown) {

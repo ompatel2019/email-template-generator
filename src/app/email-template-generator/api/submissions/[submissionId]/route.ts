@@ -65,29 +65,28 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     );
   }
 
-  const typedSubmission = submission as SubmissionRow;
+  const s = submission as SubmissionRow;
+
   const { count, error: countError } = await supabase
     .from("email_templates")
     .select("id", { count: "exact", head: true })
-    .eq("campaign_id", typedSubmission.campaign_id);
+    .eq("campaign_id", s.campaign_id);
 
   if (countError) {
     return Response.json({ error: countError.message }, { status: 500 });
   }
 
-  const body = buildTemplateBody(typedSubmission);
-
   const { data: template, error: templateError } = await supabase
     .from("email_templates")
     .insert({
-      body,
-      campaign_id: typedSubmission.campaign_id,
-      cta: firstText(typedSubmission.cta, "Check Your Eligibility"),
-      from_line: firstText(typedSubmission.from_line, "Submitted suggestion"),
+      campaign_id: s.campaign_id,
       position: (count || 0) + 1,
-      preview_text: firstText(typedSubmission.preview_text, typedSubmission.notes, body.slice(0, 140)),
+      from_line: s.from_line?.trim() ?? "",
+      subject_line: s.subject_line?.trim() ?? "",
+      preview_text: s.preview_text?.trim() ?? "",
+      body: s.body?.trim() ?? s.notes?.trim() ?? "",
+      cta: s.cta?.trim() ?? "",
       source_type: "submission",
-      subject_line: firstText(typedSubmission.subject_line, "Submitted email"),
       verified: true,
     })
     .select("id, from_line, subject_line, preview_text, body, cta, verified, source_type")
@@ -122,29 +121,4 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       verified: Boolean(template.verified),
     },
   });
-}
-
-function firstText(...values: Array<string | null | undefined>) {
-  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim() || "";
-}
-
-function buildTemplateBody(submission: SubmissionRow) {
-  const body = firstText(submission.body);
-
-  if (body) {
-    return body;
-  }
-
-  const details = [
-    ["From", submission.from_line],
-    ["Subject", submission.subject_line],
-    ["Preview", submission.preview_text],
-    ["CTA", submission.cta],
-    ["Notes", submission.notes],
-    ["Restrictions", submission.restrictions],
-  ]
-    .filter(([, value]) => typeof value === "string" && value.trim().length > 0)
-    .map(([label, value]) => `${label}: ${value?.trim()}`);
-
-  return details.length > 0 ? details.join("\n") : "Submitted input";
 }
