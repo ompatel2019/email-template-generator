@@ -568,6 +568,14 @@ export default function CampaignBuilder({
       <section className="mx-auto flex min-h-screen w-full max-w-[1520px] flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
         <header className="grid gap-4 rounded-lg border border-black/10 bg-white px-5 py-5 shadow-sm lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
+            <button
+              className="mb-3 flex items-center gap-1.5 text-xs font-medium text-[#7a6a5e] hover:text-[#171717] transition"
+              onClick={() => router.push("/email-template-generator")}
+              type="button"
+            >
+              <span>←</span>
+              <span>All campaigns</span>
+            </button>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#a34f2d]">
               Email template generator
             </p>
