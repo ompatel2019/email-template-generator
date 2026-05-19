@@ -574,7 +574,7 @@ export default function CampaignBuilder({
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[#171717] sm:text-4xl">
               {trialName}
             </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#665e56]">
+            <p className="mt-2 text-sm leading-6 text-[#665e56]">
               Paste the approved ingredients, choose a pack size, and generate review-ready email
               variations with compliant from lines, previews, body copy, and CTAs.
             </p>
@@ -1169,7 +1169,7 @@ function SubmissionCard({
       </div>
 
       {metaFields.length > 0 ? (
-        <div className={`mt-4 grid gap-3 text-sm ${metaFields.length > 1 ? "md:grid-cols-2" : ""}`}>
+        <div className={`mt-4 grid gap-3 text-sm ${metaFields.length > 1 ? "md:grid-cols-2" : "grid-cols-1"}`}>
           {metaFields.map(({ label, value, tone }) => (
             <MetaBox key={label} label={label} tone={tone} value={value!} />
           ))}
@@ -1177,15 +1177,21 @@ function SubmissionCard({
       ) : null}
 
       {submission.body ? (
-        <p className="mt-4 whitespace-pre-wrap rounded-md bg-[#faf7f2] p-4 text-sm leading-7 text-[#302a25]">
-          {submission.body}
-        </p>
+        <div className="mt-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-[#7a7168] mb-2">Body</p>
+          <p className="whitespace-pre-wrap rounded-md bg-[#faf7f2] p-4 text-sm leading-7 text-[#302a25]">
+            {submission.body}
+          </p>
+        </div>
       ) : null}
 
       {submission.notes ? (
-        <p className="mt-3 whitespace-pre-wrap rounded-md border border-[#e3d9cf] bg-white p-4 text-sm leading-7 text-[#302a25]">
-          {submission.notes}
-        </p>
+        <div className="mt-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-[#7a7168] mb-2">Notes</p>
+          <p className="whitespace-pre-wrap rounded-md border border-[#e3d9cf] bg-white p-4 text-sm leading-7 text-[#302a25]">
+            {submission.notes}
+          </p>
+        </div>
       ) : null}
     </article>
   );
@@ -1211,65 +1217,56 @@ function TemplateCard({
         verified ? "border-[#b7cf86]" : "border-[#e4dbd1]"
       }`}
     >
-      <div className="grid gap-4 border-b border-[#eee7df] p-5">
-        <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#a34f2d]">
-                Email {templateNumber}
-              </p>
-              <span className="rounded-md bg-[#eef7df] px-2.5 py-1 text-xs font-bold text-[#49651e]">
-                {sourceLabel}
-              </span>
-            </div>
-            <h3 className="mt-2 text-2xl font-semibold leading-8 text-[#171717]">
-              {template.subjectLine ||
-                template.fromLine ||
-                (template.body
-                  ? template.body.slice(0, 60) + (template.body.length > 60 ? "…" : "")
-                  : "Verified template")}
-            </h3>
-          </div>
-
-          <div className="flex flex-wrap gap-2 lg:justify-end">
-            <VerifyButton
-              active={verified}
-              disabled={disabled || verified}
-              intent="approve"
-              onClick={() => onSetVerified(true)}
-              title="Show this email on the public campaign page"
-            />
-            <VerifyButton
-              active={!verified}
-              disabled={disabled || !verified}
-              intent="reject"
-              onClick={() => onSetVerified(false)}
-              title="Hide this email from the public campaign page"
-            />
-          </div>
+      <div className="flex items-center justify-between border-b border-[#eee7df] p-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#a34f2d]">
+            Email {templateNumber}
+          </p>
+          <span className="rounded-md bg-[#eef7df] px-2.5 py-1 text-xs font-bold text-[#49651e]">
+            {sourceLabel}
+          </span>
         </div>
-
-        {[
-          { label: "From", value: template.fromLine, tone: "default" as const },
-          { label: "Preview", value: template.previewText, tone: "default" as const },
-          { label: "CTA", value: template.cta, tone: "accent" as const },
-        ].filter(({ value }) => Boolean(value)).length > 0 ? (
-          <div className="grid w-full gap-3 text-sm md:grid-cols-3">
-            {[
-              { label: "From", value: template.fromLine, tone: "default" as const },
-              { label: "Preview", value: template.previewText, tone: "default" as const },
-              { label: "CTA", value: template.cta, tone: "accent" as const },
-            ]
-              .filter(({ value }) => Boolean(value))
-              .map(({ label, value, tone }) => (
-                <MetaBox key={label} label={label} tone={tone} value={value} />
-              ))}
-          </div>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <VerifyButton
+            active={verified}
+            disabled={disabled || verified}
+            intent="approve"
+            onClick={() => onSetVerified(true)}
+            title="Show this email on the public campaign page"
+          />
+          <VerifyButton
+            active={!verified}
+            disabled={disabled || !verified}
+            intent="reject"
+            onClick={() => onSetVerified(false)}
+            title="Hide this email from the public campaign page"
+          />
+        </div>
       </div>
+
+      {[
+        { label: "From", value: template.fromLine, tone: "default" as const },
+        { label: "Subject Line", value: template.subjectLine, tone: "default" as const },
+        { label: "Preview", value: template.previewText, tone: "default" as const },
+        { label: "CTA", value: template.cta, tone: "accent" as const },
+      ].filter(({ value }) => Boolean(value)).length > 0 ? (
+        <div className={`grid w-full gap-3 p-5 text-sm ${[template.fromLine, template.subjectLine, template.previewText, template.cta].filter(Boolean).length > 1 ? "md:grid-cols-2" : ""} ${template.body ? "border-b border-[#eee7df]" : ""}`}>
+          {[
+            { label: "From", value: template.fromLine, tone: "default" as const },
+            { label: "Subject Line", value: template.subjectLine, tone: "default" as const },
+            { label: "Preview", value: template.previewText, tone: "default" as const },
+            { label: "CTA", value: template.cta, tone: "accent" as const },
+          ]
+            .filter(({ value }) => Boolean(value))
+            .map(({ label, value, tone }) => (
+              <MetaBox key={label} label={label} tone={tone} value={value} />
+            ))}
+        </div>
+      ) : null}
 
       {template.body ? (
         <div className="p-5">
+          <p className="text-xs font-bold uppercase tracking-wide text-[#7a7168] mb-2">Body</p>
           <p className="whitespace-pre-wrap rounded-md bg-[#faf7f2] p-4 text-sm leading-7 text-[#302a25]">
             {template.body}
           </p>

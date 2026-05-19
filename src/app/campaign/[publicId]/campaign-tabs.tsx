@@ -130,6 +130,7 @@ function TemplateCard({
 }) {
   const metaFields = [
     { label: "From", value: template.from_line },
+    { label: "Subject Line", value: template.subject_line },
     { label: "Preview", value: template.preview_text },
     { label: "CTA", value: template.cta },
   ].filter(({ value }) => Boolean(value));
@@ -144,29 +145,23 @@ function TemplateCard({
     .filter(Boolean)
     .join("\n");
 
-  const title =
-    template.subject_line ||
-    template.from_line ||
-    (template.body ? template.body.slice(0, 60) + (template.body.length > 60 ? "…" : "") : null) ||
-    "Verified template";
 
   return (
     <article className="rounded-lg border border-[#e4dbd1] bg-white shadow-sm">
-      <div className="grid gap-4 border-b border-[#eee7df] p-5 lg:grid-cols-[1fr_auto]">
-        <div>
+      <div className="flex items-center justify-between border-b border-[#eee7df] p-5">
+        <div className="flex items-center gap-3">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#a34f2d]">
             Email {templateNumber}
           </p>
-          <span className="mt-2 inline-flex rounded-md bg-[#eef7df] px-2.5 py-1 text-xs font-bold text-[#49651e]">
+          <span className="inline-flex rounded-md bg-[#eef7df] px-2.5 py-1 text-xs font-bold text-[#49651e]">
             {template.source_type === "submission" ? "Submission" : "AI-generated"}
           </span>
-          <h2 className="mt-2 text-2xl font-semibold leading-8">{title}</h2>
         </div>
         <CopyTemplateButton text={copyParts} />
       </div>
 
       {metaFields.length > 0 ? (
-        <dl className={`grid gap-3 p-5 text-sm ${metaFields.length > 1 ? "md:grid-cols-3" : ""} ${template.body ? "border-b border-[#eee7df]" : ""}`}>
+        <dl className={`grid gap-3 p-5 text-sm ${metaFields.length > 1 ? "md:grid-cols-2" : "grid-cols-1"} ${template.body ? "border-b border-[#eee7df]" : ""}`}>
           {metaFields.map(({ label, value }) => (
             <MetaBox key={label} label={label} value={value} />
           ))}
@@ -175,6 +170,7 @@ function TemplateCard({
 
       {template.body ? (
         <div className="p-5">
+          <p className="text-xs font-bold uppercase tracking-wide text-[#7a7168] mb-2">Body</p>
           <p className="whitespace-pre-wrap rounded-md bg-[#faf7f2] p-4 text-sm leading-7 text-[#302a25]">
             {template.body}
           </p>

@@ -218,7 +218,7 @@ export function SubmissionForm({ publicId }: SubmissionFormProps) {
         onSubmit={handleFromLinesSubmit}
         onChange={(value) => setFromLines({ value })}
         open={fromLines.open}
-        placeholder={"Research Team\nClinical Support\nTrial Matching\nPatient Services"}
+        placeholder=""
         submitted={fromLines.submitted}
         submitting={fromLines.submitting}
         successMessage="From lines submitted for review."
@@ -234,9 +234,7 @@ export function SubmissionForm({ publicId }: SubmissionFormProps) {
         onSubmit={handleSubjectLinesSubmit}
         onChange={(value) => setSubjectLines({ value })}
         open={subjectLines.open}
-        placeholder={
-          "Find Clinical Trials That Match Your Needs\nExplore Personalized Clinical Trial Opportunities\nYou May Qualify for New Treatment Studies"
-        }
+        placeholder=""
         submitted={subjectLines.submitted}
         submitting={subjectLines.submitting}
         successMessage="Subject lines submitted for review."
@@ -252,7 +250,7 @@ export function SubmissionForm({ publicId }: SubmissionFormProps) {
         onSubmit={handleEmailBodySubmit}
         onChange={(value) => setEmailBody({ value })}
         open={emailBody.open}
-        placeholder="Paste the full email body or copy notes here..."
+        placeholder=""
         submitted={emailBody.submitted}
         submitting={emailBody.submitting}
         successMessage="Email body submitted for review."
