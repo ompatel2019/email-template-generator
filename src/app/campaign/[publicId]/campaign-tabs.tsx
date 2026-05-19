@@ -37,6 +37,11 @@ export function CampaignTabs({
   submissions: SubmissionRow[];
 }) {
   const [tab, setTab] = useState<Tab>("templates");
+  const [templateSubTab, setTemplateSubTab] = useState<"ai" | "submitted">("ai");
+
+  const aiTemplates = templates.filter((t) => t.source_type !== "submission");
+  const submittedTemplates = templates.filter((t) => t.source_type === "submission");
+  const activeTemplates = templateSubTab === "ai" ? aiTemplates : submittedTemplates;
 
   return (
     <div className="grid gap-5">
@@ -59,18 +64,35 @@ export function CampaignTabs({
       </nav>
 
       {tab === "templates" ? (
-        templates.length === 0 ? (
-          <EmptyState
-            title="No verified templates yet"
-            description="Templates will appear here once they've been reviewed and approved."
-          />
-        ) : (
-          <div className="grid gap-4">
-            {templates.map((template, index) => (
-              <TemplateCard key={template.id} template={template} templateNumber={index + 1} />
-            ))}
+        <div className="grid gap-4">
+          <div className="flex gap-1 rounded-lg border border-black/10 bg-white p-1.5 shadow-sm">
+            <SubTabButton active={templateSubTab === "ai"} onClick={() => setTemplateSubTab("ai")}>
+              AI-Generated
+              <span className={`ml-2 rounded-md px-2 py-0.5 text-xs font-bold ${templateSubTab === "ai" ? "bg-black/10" : "bg-[#f0e8df] text-[#7a6a5e]"}`}>
+                {aiTemplates.length}
+              </span>
+            </SubTabButton>
+            <SubTabButton active={templateSubTab === "submitted"} onClick={() => setTemplateSubTab("submitted")}>
+              Verified Submissions
+              <span className={`ml-2 rounded-md px-2 py-0.5 text-xs font-bold ${templateSubTab === "submitted" ? "bg-black/10" : "bg-[#f0e8df] text-[#7a6a5e]"}`}>
+                {submittedTemplates.length}
+              </span>
+            </SubTabButton>
           </div>
-        )
+
+          {activeTemplates.length === 0 ? (
+            <EmptyState
+              title={templateSubTab === "ai" ? "No AI-generated templates yet" : "No verified submissions yet"}
+              description={templateSubTab === "ai" ? "Generated templates will appear here once approved." : "Approved submissions will appear here."}
+            />
+          ) : (
+            <div className="grid gap-4">
+              {activeTemplates.map((template, index) => (
+                <TemplateCard key={template.id} template={template} templateNumber={index + 1} />
+              ))}
+            </div>
+          )}
+        </div>
       ) : null}
 
       {tab === "submissions" ? (
@@ -231,6 +253,28 @@ function MetaBox({ label, value }: { label: string; value: string }) {
       <dt className="text-xs font-bold uppercase tracking-wide text-[#7a7168]">{label}</dt>
       <dd className="mt-1.5 font-medium leading-snug text-[#302a25]">{value}</dd>
     </div>
+  );
+}
+
+function SubTabButton({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`flex flex-1 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition ${
+        active ? "bg-[#f0e8df] text-[#171717]" : "text-[#746b62] hover:bg-[#f7f2ec] hover:text-[#171717]"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </button>
   );
 }
 
