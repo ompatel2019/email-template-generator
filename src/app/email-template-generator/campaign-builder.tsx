@@ -174,7 +174,7 @@ export default function CampaignBuilder({
       setCampaignsError("");
 
       try {
-        const response = await fetch(withBasePath("/email-template-generator/api/campaigns"));
+        const response = await fetch(withBasePath("/email-template-generator/api/campaigns"), { cache: "no-store" });
         const payload = (await response.json()) as
           | { campaigns: CampaignSummary[] }
           | { error: string };

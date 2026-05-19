@@ -1,5 +1,7 @@
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 
+export const dynamic = "force-dynamic";
+
 type CampaignRow = {
   created_at: string;
   email_templates?: Array<{ id: string; verified?: boolean | null }>;
@@ -25,18 +27,21 @@ export async function GET() {
       throw new Error(error?.message || "Failed to load campaigns.");
     }
 
-    return Response.json({
-      campaigns: (data as CampaignRow[]).map((campaign) => ({
-        createdAt: campaign.created_at,
-        id: campaign.id,
-        publicId: campaign.public_id,
-        publicPath: `/campaign/${campaign.public_id}`,
-        templateCount: campaign.email_templates?.length || 0,
-        verifiedCount:
-          campaign.email_templates?.filter((template) => Boolean(template.verified)).length || 0,
-        trialName: campaign.trial_name,
-      })),
-    });
+    return Response.json(
+      {
+        campaigns: (data as CampaignRow[]).map((campaign) => ({
+          createdAt: campaign.created_at,
+          id: campaign.id,
+          publicId: campaign.public_id,
+          publicPath: `/campaign/${campaign.public_id}`,
+          templateCount: campaign.email_templates?.length || 0,
+          verifiedCount:
+            campaign.email_templates?.filter((template) => Boolean(template.verified)).length || 0,
+          trialName: campaign.trial_name,
+        })),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load campaigns.";
     return Response.json({ error: message }, { status: 500 });
