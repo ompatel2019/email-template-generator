@@ -1,0 +1,42 @@
+Wi-Fi: vLh>b:4&H!
+
+GoodLabGroup SSH: 
+u: ssh root@69.16.203.20 -p 22 root 
+pw: 4@#NJ2vyzkJJu28
+su - goodlabgroup
+
+GoodLab-Windows SSH
+u: ssh Administrator@69.16.203.223
+pw: 2#5DXFSLu}yoz#
+
+Day1Labs SSH:
+u: ssh root@69.16.203.88 -p 22
+pw: G\C1wH2yP7eLp]
+su - trialsite
+
+GoodLab AI Directory
+u: gl_ux
+pw: urce.icu/8eb86
+
+GoodLab CPanel
+url: https://goodlabgroup.com:2083/
+u: goodlabgroup
+pw: 4@#NJ2vyzkJJu28
+
+Ringba
+url: https://app.ringba.com/
+u: puntnko@gmail.com
+pw: 243Casinojoe1# 
+
+Anthropic API Key: sk-ant-api03856bn3d0WpFKRYUaz4uyn1_J0BKJkmdQWHkNl7bUgaHPKdJVgP-kG8S_QBl-Jp8pGMgO0BAwOGgeA4Z81GElrA-VGdbLAAA
+
+php -S localhost:8080
+
+su - goodlabgroup -c "
+  cd /home2/goodlabgroup/public_html/ai/apps/email-template-generator &&
+  git pull &&
+  /opt/nodejs/current/bin/npm ci &&
+  /opt/nodejs/current/bin/npm run build &&
+  /opt/nodejs/current/bin/pm2 restart email-template-generator &&
+  /opt/nodejs/current/bin/pm2 save
+"
