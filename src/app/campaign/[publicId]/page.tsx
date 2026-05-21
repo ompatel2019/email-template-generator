@@ -60,6 +60,17 @@ export default async function CampaignTemplatesPage({ params }: PageProps) {
     throw new Error(submissionsError?.message || "Failed to load submissions.");
   }
 
+  const { data: rejectedSubmissions, error: rejectedError } = await supabase
+    .from("campaign_submissions")
+    .select("id, from_line, subject_line, preview_text, body, cta, notes, restrictions, rejection_reason")
+    .eq("campaign_id", campaign.id)
+    .eq("status", "rejected")
+    .order("created_at", { ascending: false });
+
+  if (rejectedError || !rejectedSubmissions) {
+    throw new Error(rejectedError?.message || "Failed to load rejected submissions.");
+  }
+
   return (
     <main className="min-h-screen bg-[#f5f1ea] px-4 py-6 text-[#171717] sm:px-6 lg:px-8">
       <section className="mx-auto grid w-full max-w-5xl gap-5">
@@ -79,6 +90,7 @@ export default async function CampaignTemplatesPage({ params }: PageProps) {
           publicId={publicId}
           templates={templates}
           submissions={submissions}
+          rejectedSubmissions={rejectedSubmissions}
         />
       </section>
     </main>

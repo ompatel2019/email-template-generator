@@ -86,6 +86,19 @@ export async function POST(request: Request) {
       throw new Error(error?.message || "Failed to create campaign.");
     }
 
+    const { data: defaultRecipient } = await supabase
+      .from("notification_recipients")
+      .select("id")
+      .eq("email", "support@goodclicks.digital")
+      .single();
+
+    if (defaultRecipient) {
+      await supabase.from("campaign_notification_recipients").insert({
+        campaign_id: campaignId,
+        recipient_id: defaultRecipient.id,
+      });
+    }
+
     return Response.json({
       campaign: {
         createdAt: campaign.created_at,

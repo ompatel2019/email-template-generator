@@ -66,10 +66,21 @@ export default async function EditCampaignPage({ params }: PageProps) {
     throw new Error(submissionsError?.message || "Failed to load submissions.");
   }
 
+  const { data: recipientRows } = await supabase
+    .from("campaign_notification_recipients")
+    .select("notification_recipients(id, email, name)")
+    .eq("campaign_id", campaign.id);
+
+  type RecipientJoinRow = { notification_recipients: { id: string; email: string; name: string } };
+  const notificationRecipients = ((recipientRows ?? []) as unknown as RecipientJoinRow[])
+    .map((row) => row.notification_recipients)
+    .filter(Boolean);
+
   const initialCampaign: InitialCampaign = {
     bodyCopy: campaign.source_email,
     fromLines: campaign.from_lines,
     id: campaign.id,
+    notificationRecipients,
     publicId: campaign.public_id,
     publicPath: `/campaign/${campaign.public_id}`,
     restrictions: campaign.restrictions,

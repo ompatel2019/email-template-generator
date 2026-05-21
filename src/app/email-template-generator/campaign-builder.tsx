@@ -57,10 +57,17 @@ type GenerateResponse =
     }
   | { error: string };
 
+type NotificationRecipient = {
+  id: string;
+  email: string;
+  name: string;
+};
+
 export type InitialCampaign = {
   bodyCopy: string;
   fromLines: string;
   id: string;
+  notificationRecipients?: NotificationRecipient[];
   publicId: string;
   publicPath: string;
   restrictions: string;
@@ -112,12 +119,22 @@ export default function CampaignBuilder({
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [reviewingSubmissionId, setReviewingSubmissionId] = useState("");
+  const [rejectingSubmission, setRejectingSubmission] = useState<CampaignSubmission | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
   const [reviewTab, setReviewTab] = useState<ReviewTab>("unverified");
   const [unverifiedTab, setUnverifiedTab] = useState<UnverifiedTab>("ai");
   const [verifyingTemplateId, setVerifyingTemplateId] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
   const [deletingCampaignId, setDeletingCampaignId] = useState("");
   const [toastMessage, setToastMessage] = useState("");
+  const [recipients, setRecipients] = useState<NotificationRecipient[]>(
+    initialCampaign?.notificationRecipients ?? [],
+  );
+  const [allRecipients, setAllRecipients] = useState<NotificationRecipient[]>([]);
+  const [recipientsLoaded, setRecipientsLoaded] = useState(false);
+  const [addingRecipient, setAddingRecipient] = useState(false);
+  const [newRecipientEmail, setNewRecipientEmail] = useState("");
+  const [newRecipientName, setNewRecipientName] = useState("");
   const briefFormRef = useRef<HTMLFormElement | null>(null);
   const [reviewPanelHeight, setReviewPanelHeight] = useState<number | null>(null);
 
@@ -413,17 +430,26 @@ export default function CampaignBuilder({
     }
   }
 
-  async function reviewSubmission(submission: CampaignSubmission, action: "accept" | "reject") {
+  async function reviewSubmission(
+    submission: CampaignSubmission,
+    action: "accept" | "reject",
+    reason?: string,
+  ) {
     setReviewingSubmissionId(submission.id);
     setError("");
 
     try {
+      const body: Record<string, string> = { action };
+      if (action === "reject" && reason) {
+        body.rejectionReason = reason;
+      }
+
       const response = await fetch(
         withBasePath(`/email-template-generator/api/submissions/${submission.id}`),
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action }),
+          body: JSON.stringify(body),
         },
       );
       const payload = (await response.json()) as
@@ -445,6 +471,97 @@ export default function CampaignBuilder({
       setError(caughtError instanceof Error ? caughtError.message : "Failed to review submission.");
     } finally {
       setReviewingSubmissionId("");
+      setRejectingSubmission(null);
+      setRejectionReason("");
+    }
+  }
+
+  async function loadAllRecipients() {
+    if (recipientsLoaded) return;
+    try {
+      const response = await fetch(withBasePath("/email-template-generator/api/recipients"));
+      const data = (await response.json()) as { recipients: NotificationRecipient[] };
+      if (data.recipients) {
+        setAllRecipients(data.recipients);
+        setRecipientsLoaded(true);
+      }
+    } catch {
+      /* silent */
+    }
+  }
+
+  async function assignRecipient(recipientId: string) {
+    if (!savedCampaign) return;
+    try {
+      const response = await fetch(
+        withBasePath(`/email-template-generator/api/campaigns/${savedCampaign.id}/recipients`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipientId }),
+        },
+      );
+      if (response.ok) {
+        const added = allRecipients.find((r) => r.id === recipientId);
+        if (added) {
+          setRecipients((current) => [...current, added]);
+        }
+      }
+    } catch {
+      /* silent */
+    }
+  }
+
+  async function removeRecipient(recipientId: string) {
+    if (!savedCampaign) return;
+    try {
+      const response = await fetch(
+        withBasePath(
+          `/email-template-generator/api/campaigns/${savedCampaign.id}/recipients/${recipientId}`,
+        ),
+        { method: "DELETE" },
+      );
+      if (response.ok) {
+        setRecipients((current) => current.filter((r) => r.id !== recipientId));
+      }
+    } catch {
+      /* silent */
+    }
+  }
+
+  async function createAndAssignRecipient() {
+    if (!savedCampaign || !newRecipientEmail.trim()) return;
+    setAddingRecipient(true);
+    try {
+      const createResponse = await fetch(withBasePath("/email-template-generator/api/recipients"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newRecipientEmail.trim(), name: newRecipientName.trim() }),
+      });
+      const createData = (await createResponse.json()) as {
+        recipient?: NotificationRecipient;
+        error?: string;
+      };
+      if (!createData.recipient) return;
+
+      const newRecipient = createData.recipient;
+      setAllRecipients((current) => [...current, newRecipient]);
+
+      await fetch(
+        withBasePath(`/email-template-generator/api/campaigns/${savedCampaign.id}/recipients`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipientId: newRecipient.id }),
+        },
+      );
+      setRecipients((current) => [...current, newRecipient]);
+      setNewRecipientEmail("");
+      setNewRecipientName("");
+    } catch {
+      /* silent */
+    } finally {
+      setAddingRecipient(false);
     }
   }
 
@@ -688,14 +805,33 @@ export default function CampaignBuilder({
             className="grid min-h-0 gap-4 lg:grid-rows-[auto_minmax(0,1fr)]"
             style={reviewPanelHeight ? { height: reviewPanelHeight } : undefined}
           >
-            <SharePanel
-              copied={copiedKey === "review-path"}
-              onCopy={() => copyText(reviewUrl, "review-path")}
-              reviewPath={reviewPath}
-              reviewUrl={reviewUrl}
-              saved={Boolean(savedCampaign?.publicPath)}
-              trialName={trialName}
-            />
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <SharePanel
+                  copied={copiedKey === "review-path"}
+                  onCopy={() => copyText(reviewUrl, "review-path")}
+                  reviewPath={reviewPath}
+                  reviewUrl={reviewUrl}
+                  saved={Boolean(savedCampaign?.publicPath)}
+                  trialName={trialName}
+                />
+              </div>
+              <div className="lg:col-span-1">
+                <NotificationRecipientsPanel
+                  addingRecipient={addingRecipient}
+                  allRecipients={allRecipients}
+                  assignRecipient={assignRecipient}
+                  createAndAssignRecipient={createAndAssignRecipient}
+                  loadAllRecipients={loadAllRecipients}
+                  newRecipientEmail={newRecipientEmail}
+                  newRecipientName={newRecipientName}
+                  onNewEmailChange={setNewRecipientEmail}
+                  onNewNameChange={setNewRecipientName}
+                  recipients={recipients}
+                  removeRecipient={removeRecipient}
+                />
+              </div>
+            </div>
 
             <section
               className={`flex min-h-0 w-full flex-col rounded-lg border border-black/10 bg-[#fcfbf8] shadow-sm ${
@@ -789,7 +925,10 @@ export default function CampaignBuilder({
                         disabled={reviewingSubmissionId === submission.id}
                         key={submission.id}
                         onAccept={() => reviewSubmission(submission, "accept")}
-                        onReject={() => reviewSubmission(submission, "reject")}
+                        onReject={() => {
+                          setRejectingSubmission(submission);
+                          setRejectionReason("");
+                        }}
                         submission={submission}
                       />
                     ))
@@ -800,6 +939,44 @@ export default function CampaignBuilder({
           </div>
         </div>
       </section>
+      ) : null}
+
+      {rejectingSubmission ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-4">
+          <section className="w-full max-w-md rounded-lg border border-black/10 bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-semibold text-[#171717]">Reject submission?</h2>
+            <p className="mt-2 text-sm leading-6 text-[#746b62]">
+              Optionally provide a reason for the rejection. This will be sent to notification recipients.
+            </p>
+            <textarea
+              className="mt-3 w-full rounded-md border border-[#e3d9cf] bg-[#fffdf9] p-3 text-sm text-[#2f2a25] outline-none transition placeholder:text-[#a69b90] focus:border-[#171717] focus:ring-4 focus:ring-[#eadfd3]"
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Reason for rejection (optional)"
+              rows={3}
+              value={rejectionReason}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="h-10 rounded-md border border-[#e3d9cf] bg-[#fffaf3] px-4 text-sm font-bold text-[#4c4239] transition hover:bg-white"
+                onClick={() => {
+                  setRejectingSubmission(null);
+                  setRejectionReason("");
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="h-10 rounded-md bg-[#9c3527] px-4 text-sm font-bold text-white transition hover:bg-[#7f291f] disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={reviewingSubmissionId === rejectingSubmission.id}
+                onClick={() => reviewSubmission(rejectingSubmission, "reject", rejectionReason)}
+                type="button"
+              >
+                {reviewingSubmissionId === rejectingSubmission.id ? "Rejecting…" : "Reject"}
+              </button>
+            </div>
+          </section>
+        </div>
       ) : null}
     </main>
   );
@@ -1072,7 +1249,7 @@ function SharePanel({
   trialName: string;
 }) {
   return (
-    <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm">
+    <section className="h-full rounded-lg border border-black/10 bg-white p-4 shadow-sm">
       <div className="grid gap-3">
         <div>
           <p className="text-sm font-semibold text-[#171717]">Review page</p>
@@ -1089,17 +1266,191 @@ function SharePanel({
             readOnly
             value={saved ? reviewUrl : reviewPath}
           />
-          <button
-            className="h-10 rounded-md border border-[#e3d9cf] bg-[#fffaf3] px-4 text-sm font-bold text-[#4c4239] transition hover:bg-white"
-            disabled={!saved}
-            onClick={onCopy}
-            type="button"
-          >
-            {copied ? "Copied" : "Copy URL"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              className="grid h-10 w-10 cursor-pointer place-items-center rounded-md border border-[#e3d9cf] bg-[#fffaf3] text-[#4c4239] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!saved}
+              onClick={onCopy}
+              title={copied ? "Copied" : "Copy URL"}
+              type="button"
+            >
+              {copied ? (
+                <Check aria-hidden="true" size={18} strokeWidth={2.3} />
+              ) : (
+                <Copy aria-hidden="true" size={18} strokeWidth={2.3} />
+              )}
+            </button>
+            <a
+              className={`grid h-10 w-10 place-items-center rounded-md transition ${
+                saved
+                  ? "bg-[#171717] text-white hover:bg-[#332d28]"
+                  : "pointer-events-none bg-[#e3d9cf] text-[#a69b90] opacity-60"
+              }`}
+              href={saved ? withBasePath(reviewPath) : undefined}
+              rel="noreferrer"
+              target="_blank"
+              title="Go to review page"
+            >
+              <ExternalLink aria-hidden="true" size={18} strokeWidth={2.3} />
+            </a>
+          </div>
         </div>
       </div>
     </section>
+  );
+}
+
+function NotificationRecipientsPanel({
+  addingRecipient,
+  allRecipients,
+  assignRecipient,
+  createAndAssignRecipient,
+  loadAllRecipients,
+  newRecipientEmail,
+  newRecipientName,
+  onNewEmailChange,
+  onNewNameChange,
+  recipients,
+  removeRecipient,
+}: {
+  addingRecipient: boolean;
+  allRecipients: NotificationRecipient[];
+  assignRecipient: (id: string) => void;
+  createAndAssignRecipient: () => void;
+  loadAllRecipients: () => void;
+  newRecipientEmail: string;
+  newRecipientName: string;
+  onNewEmailChange: (value: string) => void;
+  onNewNameChange: (value: string) => void;
+  recipients: NotificationRecipient[];
+  removeRecipient: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  const assignedIds = new Set(recipients.map((r) => r.id));
+  const unassigned = allRecipients.filter((r) => !assignedIds.has(r.id));
+
+  return (
+    <>
+      <section className="flex h-full flex-col rounded-lg border border-black/10 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-[#171717]">Notification Recipients</p>
+          <button
+            className="text-xs font-bold text-[#7a7168] transition hover:text-[#171717]"
+            onClick={() => {
+              setExpanded(!expanded);
+              if (!expanded) loadAllRecipients();
+            }}
+            type="button"
+          >
+            {expanded ? "Close" : "Manage"}
+          </button>
+        </div>
+
+        <p className="mt-1 text-xs leading-5 text-[#7a7168]">
+          These people are emailed when submissions are accepted or rejected.
+        </p>
+
+        <div className="mt-auto pt-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {recipients.length > 0 ? (
+              recipients.map((r) => (
+                <span
+                  className="inline-flex items-center gap-1 rounded-md bg-[#f5f1ea] px-2.5 py-1 text-xs text-[#4c4239]"
+                  key={r.id}
+                >
+                  {r.name || r.email}
+                  {expanded ? (
+                    <button
+                      className="ml-0.5 cursor-pointer text-[#9c3527] transition hover:text-[#7f291f] hover:drop-shadow-[0_0_4px_rgba(156,53,39,0.5)]"
+                      onClick={() => removeRecipient(r.id)}
+                      title="Remove"
+                      type="button"
+                    >
+                      <X size={12} strokeWidth={2.5} />
+                    </button>
+                  ) : null}
+                </span>
+              ))
+            ) : (
+              <span className="text-xs text-[#7a7168]">No recipients assigned.</span>
+            )}
+            {expanded ? (
+              <>
+                {unassigned.map((r) => (
+                  <button
+                    className="inline-flex items-center gap-1 rounded-md border border-dashed border-[#e3d9cf] px-2.5 py-1 text-xs text-[#7a7168] transition hover:border-[#171717] hover:text-[#171717]"
+                    key={r.id}
+                    onClick={() => assignRecipient(r.id)}
+                    type="button"
+                  >
+                    + {r.name || r.email}
+                  </button>
+                ))}
+                <button
+                  className="inline-flex items-center gap-1 rounded-md border border-dashed border-[#e3d9cf] px-2.5 py-1 text-xs text-[#7a7168] transition hover:border-[#171717] hover:text-[#171717]"
+                  onClick={() => setShowCreateModal(true)}
+                  type="button"
+                >
+                  + New
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {showCreateModal ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-4">
+          <section className="w-full max-w-sm rounded-lg border border-black/10 bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-semibold text-[#171717]">New recipient</h2>
+            <p className="mt-1 text-sm leading-6 text-[#746b62]">
+              Add someone who should receive accept/reject notifications.
+            </p>
+            <div className="mt-4 grid gap-3">
+              <input
+                className="h-10 rounded-md border border-[#e3d9cf] bg-[#fffdf9] px-3 text-sm text-[#2f2a25] outline-none placeholder:text-[#a69b90] focus:border-[#171717] focus:ring-4 focus:ring-[#eadfd3]"
+                onChange={(e) => onNewEmailChange(e.target.value)}
+                placeholder="Email address"
+                type="email"
+                value={newRecipientEmail}
+              />
+              <input
+                className="h-10 rounded-md border border-[#e3d9cf] bg-[#fffdf9] px-3 text-sm text-[#2f2a25] outline-none placeholder:text-[#a69b90] focus:border-[#171717] focus:ring-4 focus:ring-[#eadfd3]"
+                onChange={(e) => onNewNameChange(e.target.value)}
+                placeholder="Display name (optional)"
+                value={newRecipientName}
+              />
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="h-10 rounded-md border border-[#e3d9cf] bg-[#fffaf3] px-4 text-sm font-bold text-[#4c4239] transition hover:bg-white"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  onNewEmailChange("");
+                  onNewNameChange("");
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="h-10 rounded-md bg-[#171717] px-4 text-sm font-bold text-white transition hover:bg-[#333] disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!newRecipientEmail.trim() || addingRecipient}
+                onClick={() => {
+                  createAndAssignRecipient();
+                  setShowCreateModal(false);
+                }}
+                type="button"
+              >
+                {addingRecipient ? "Adding…" : "Add recipient"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </>
   );
 }
 

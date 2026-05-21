@@ -1,0 +1,72 @@
+---
+description: Codebase summary and architecture overview for the email template generator
+alwaysApply: true
+---
+
+# Email Template Generator — Codebase Summary
+
+Clinical trial patient recruitment tool. Admins create campaigns, generate AI email variations, and review public copy suggestions.
+
+## Production URLs
+- Admin: `https://goodlabgroup.com/ai/apps/email-template-generator`
+- Public campaign: `https://goodlabgroup.com/ai/apps/campaign/[publicId]`
+
+## Key Config
+- `basePath` and `assetPrefix` are both `/ai/apps` in `next.config.ts`
+- `router.push()` does NOT need `withBasePath()` — Next.js adds basePath automatically
+- `fetch()` calls DO need `withBasePath()` — use the helper in `campaign-builder.tsx`
+- Server runs on port 3000, managed by PM2 as user `goodlabgroup`
+- Node path: `/opt/nodejs/current/bin/node`
+
+## Deploy Command
+```bash
+su - goodlabgroup -c "cd /home2/goodlabgroup/public_html/ai/apps/email-template-generator && git pull && /opt/nodejs/current/bin/npm ci && /opt/nodejs/current/bin/npm run build && /opt/nodejs/current/bin/pm2 restart email-template-generator && /opt/nodejs/current/bin/pm2 save"
+```
+After changing `.env.production`, use `pm2 restart email-template-generator --update-env`.
+
+## Stack
+- **Next.js 16** (App Router, TypeScript) — `src/app/`
+- **Supabase** — database via `createSupabaseAdmin()` in `src/lib/supabase-admin.ts`
+- **Nodemailer** — SMTP email via `src/lib/mailer.ts`, creds in `.env.production`
+- **Tailwind CSS** — utility-first, no component library
+- **OpenAI + Anthropic** — AI generation via `src/app/email-template-generator/api/generate/`
+
+## Database Tables
+- `campaigns` — one row per trial campaign (ingredients, metadata)
+- `email_templates` — verified templates (AI-generated or accepted submissions). All fields NOT NULL but allow empty strings `""`
+- `campaign_submissions` — pending public suggestions, `status: "pending" | "accepted" | "rejected"`
+
+## Route Map
+| Path | Purpose |
+|------|---------|
+| `/email-template-generator` | Admin campaign library (list) |
+| `/email-template-generator/[publicId]` | Admin campaign builder (edit + review queue) |
+| `/campaign/[publicId]` | Public read-only page (templates + suggest copy) |
+| `/email-template-generator/api/campaigns` | GET list / POST create — has `force-dynamic` + `Cache-Control: no-store` |
+| `/email-template-generator/api/campaigns/[id]` | PATCH update / DELETE |
+| `/email-template-generator/api/generate` | POST AI generation |
+| `/email-template-generator/api/submissions/[id]` | PATCH accept/reject → inserts into `email_templates` |
+| `/campaign/[publicId]/submissions` | POST new public submission → triggers email notification |
+
+## Key Components
+- `campaign-builder.tsx` — monolithic admin client component. Screens: `dashboard`, `new`, `builder`
+- `campaign-tabs.tsx` — public page tabs: Templates (AI-Generated / Verified Submissions sub-tabs), In Review, Suggest Copy
+- `submission-form.tsx` — public suggestion form: From Lines, Subject Lines, Email Body, Full Email sections
+
+## Submission Flow
+1. Public user submits via `submission-form.tsx` → POST `/campaign/[publicId]/submissions`
+2. Row inserted into `campaign_submissions` with `status: "pending"`
+3. Email notification sent to `NOTIFY_EMAILS` (comma-separated in `.env.production`)
+4. Admin reviews in builder → PATCH `/email-template-generator/api/submissions/[id]`
+5. On accept → row inserted into `email_templates` with `source_type: "submission"`, missing fields set to `""`
+
+## Display Rules
+- All cards (TemplateCard, SubmissionCard) show **only populated fields** — no "Not provided" text
+- Single-field cards fill full width (no `md:grid-cols-2`)
+- Body section always has a "Body" label above the pre-wrap block
+- Admin `TemplateCard` shows From, Subject Line, Preview, CTA boxes — no h2 title heading
+
+## Email Notifications
+- Sent via `src/lib/mailer.ts` using Nodemailer + cPanel SMTP (`noreply@goodlabgroup.com`)
+- Recipients: `NOTIFY_EMAILS` env var, comma-separated
+- Production recipients: `dan@goodlab.org, josh@goodlab.org` (+ `om@goodlab.org` for testing)
