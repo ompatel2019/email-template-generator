@@ -75,6 +75,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "An existing template is required for this action." }, { status: 400 });
   }
 
+  console.log(
+    `[generate] request action=${action} count=${count ?? "n/a"} campaignId=${campaignId || "new"}`,
+  );
+
+  const startedAt = Date.now();
+
   try {
     const anthropic = new Anthropic({ apiKey });
     const claudeResponse = await anthropic.messages.create({
@@ -107,6 +113,8 @@ export async function POST(request: Request) {
         name: toolName,
       },
     });
+
+    console.log(`[generate] claude responded in ${Date.now() - startedAt}ms`);
 
     const parsed = extractToolInput(claudeResponse);
 
@@ -147,6 +155,7 @@ export async function POST(request: Request) {
     return Response.json({ templates: parsed.templates });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected generation error.";
+    console.error(`[generate] failed after ${Date.now() - startedAt}ms: ${message}`);
     return Response.json({ error: message }, { status: 500 });
   }
 }
@@ -309,12 +318,50 @@ async function saveCampaign({
     throw new Error(campaignError?.message || "Failed to save campaign.");
   }
 
+  console.log(
+    `[generate] campaign ${campaignId ? "updated" : "created"} id=${campaign.id} public_id=${campaign.public_id}`,
+  );
+
+  // Regenerating an existing campaign: clear the previous AI batch so we can
+  // re-insert without colliding on the unique (campaign_id, position) index.
+  // Accepted submissions also live here (source_type = "submission"); keep them.
+  let positionOffset = 0;
+
+  if (campaignId) {
+    const { error: deleteError, count: deletedCount } = await supabase
+      .from("email_templates")
+      .delete({ count: "exact" })
+      .eq("campaign_id", campaign.id)
+      .eq("source_type", "ai");
+
+    if (deleteError) {
+      console.error(`[generate] failed to clear previous AI batch: ${deleteError.message}`);
+      throw new Error(deleteError.message || "Failed to clear previous templates.");
+    }
+
+    const { data: remaining, error: remainingError } = await supabase
+      .from("email_templates")
+      .select("position")
+      .eq("campaign_id", campaign.id)
+      .order("position", { ascending: false })
+      .limit(1);
+
+    if (remainingError) {
+      throw new Error(remainingError.message || "Failed to read existing template positions.");
+    }
+
+    positionOffset = remaining?.[0]?.position ?? 0;
+    console.log(
+      `[generate] regenerate: cleared ${deletedCount ?? 0} AI template(s); kept rows up to position ${positionOffset}; new batch starts at ${positionOffset + 1}`,
+    );
+  }
+
   const { data: savedTemplates, error: templatesError } = await supabase
     .from("email_templates")
     .insert(
       templates.map((template, index) => ({
         campaign_id: campaign.id,
-        position: index + 1,
+        position: positionOffset + index + 1,
         from_line: template.fromLine,
         subject_line: template.subjectLine,
         preview_text: template.previewText,
@@ -327,8 +374,13 @@ async function saveCampaign({
     .select("id, from_line, subject_line, preview_text, body, cta, verified, source_type");
 
   if (templatesError || !savedTemplates) {
+    console.error(`[generate] failed to insert ${templates.length} template(s): ${templatesError?.message}`);
     throw new Error(templatesError?.message || "Failed to save generated templates.");
   }
+
+  console.log(
+    `[generate] inserted ${savedTemplates.length} template(s) at positions ${positionOffset + 1}-${positionOffset + savedTemplates.length} for campaign ${campaign.id}`,
+  );
 
   return {
     campaign: {

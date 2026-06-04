@@ -612,6 +612,31 @@ export default function CampaignBuilder({
         .toast-slide {
           animation: toast-slide 3s ease-in-out both;
         }
+
+        @keyframes loader-pop {
+          0% {
+            opacity: 0;
+            transform: scale(0.82) translateY(12px);
+          }
+          100% {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+
+        @keyframes loader-spin {
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+
+        .loader-pop {
+          animation: loader-pop 0.28s ease-out both;
+        }
+
+        .loader-ring {
+          animation: loader-spin 0.9s linear infinite;
+        }
       `}</style>
 
       {screen === "dashboard" ? (
@@ -978,7 +1003,49 @@ export default function CampaignBuilder({
           </section>
         </div>
       ) : null}
+
+      {isLoading && screen === "builder" ? <GenerationLoader count={count} /> : null}
     </main>
+  );
+}
+
+function GenerationLoader({ count }: { count: number }) {
+  const messages = useMemo(
+    () => [
+      "Drafting from lines, subject lines, and previews…",
+      "Writing body copy for each variation…",
+      "Applying your restrictions and compliance rules…",
+      "Reviewing tone and clarity…",
+      "Finalizing your templates…",
+    ],
+    [],
+  );
+  const [messageIndex, setMessageIndex] = useState(0);
+
+  useEffect(() => {
+    const messageTimer = window.setInterval(
+      () => setMessageIndex((current) => (current + 1) % messages.length),
+      2600,
+    );
+
+    return () => window.clearInterval(messageTimer);
+  }, [messages.length]);
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/35 px-4">
+      <section className="loader-pop w-full max-w-sm rounded-2xl border border-black/10 bg-white p-7 text-center shadow-xl">
+        <div className="relative mx-auto grid h-14 w-14 place-items-center">
+          <span className="loader-ring absolute inset-0 h-14 w-14 rounded-full border-[3px] border-[#ece3da] border-t-[#171717]" />
+        </div>
+
+        <h2 className="mt-5 text-xl font-semibold tracking-tight text-[#171717]">
+          Generating {count} templates
+        </h2>
+        <p className="mt-2 min-h-[40px] text-sm leading-6 text-[#746b62]">{messages[messageIndex]}</p>
+
+        <p className="mt-3 text-xs text-[#a69b90]">This usually takes 20–45 seconds.</p>
+      </section>
+    </div>
   );
 }
 
